@@ -34,8 +34,31 @@ function topFrame(stack?: string): string {
   return lines[1]?.trim() ?? "";
 }
 
+const R = "[REDACTED]";
+const PII: RegExp[] = [
+  /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/g,
+  /\b(?:\d[ \-]*?){13,19}\b/g,
+  /\b\d{3}-\d{2}-\d{4}\b/g,
+  /(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)?\d{3}[-.\s]?\d{4}\b/g,
+  /\b(?:\d{1,3}\.){3}\d{1,3}\b/g,
+  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g,
+  /Bearer\s+[A-Za-z0-9_\-.~+/]+=*/gi,
+  /(?:api[_-]?key|api[_-]?secret|access[_-]?token|auth[_-]?token|secret[_-]?key|private[_-]?key)['":\s=]+[A-Za-z0-9_\-.]{8,}/gi,
+  /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,
+  /(?:\/home\/|\/Users\/|C:\\Users\\)[^\s/\\]+/g,
+];
+
+function scrub(s: string): string {
+  for (const p of PII) s = s.replace(p, R);
+  return s;
+}
+
 function send(payload: FlaregunPayload) {
   if (!config) return;
+
+  payload.message = scrub(payload.message);
+  payload.stack = scrub(payload.stack);
+  payload.url = scrub(payload.url);
 
   if (config.beforeSend) {
     const result = config.beforeSend(payload);
