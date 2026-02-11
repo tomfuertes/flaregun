@@ -13,6 +13,24 @@ export interface FlaregunConfig {
   beforeSend?: (payload: FlaregunPayload) => FlaregunPayload | null;
 }
 
+interface QueuedError {
+  t: string;
+  m: string;
+  s: string;
+  u: string;
+}
+
+interface FlaregunGlobal {
+  c: FlaregunConfig | null;
+  q: QueuedError[];
+}
+
+declare global {
+  interface Window {
+    __fg?: FlaregunGlobal;
+  }
+}
+
 let config: FlaregunConfig | null = null;
 
 function hash(str: string): string {
@@ -108,6 +126,23 @@ function onRejection(event: PromiseRejectionEvent) {
 
 export function init(cfg: FlaregunConfig) {
   config = cfg;
+
+  // Drain queued errors from inline snippet
+  const fg = window.__fg;
+  if (fg?.q) {
+    for (const e of fg.q) {
+      send({
+        fingerprint: hash(e.m + topFrame(e.s)),
+        message: e.m.slice(0, 256),
+        stack: e.s,
+        url: e.u,
+        type: e.t,
+        projectId: cfg.projectId,
+      });
+    }
+    fg.q.length = 0;
+  }
+
   window.addEventListener("error", onError);
   window.addEventListener("unhandledrejection", onRejection);
 }
@@ -116,4 +151,9 @@ export function destroy() {
   window.removeEventListener("error", onError);
   window.removeEventListener("unhandledrejection", onRejection);
   config = null;
+}
+
+// Auto-init when loaded deferred with inline snippet
+if (typeof window !== "undefined" && window.__fg?.c) {
+  init(window.__fg.c);
 }

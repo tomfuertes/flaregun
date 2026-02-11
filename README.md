@@ -4,7 +4,7 @@ Self-hosted error tracking on Cloudflare. Analytics Engine only. No databases, n
 
 ## What it does
 
-- **Browser SDK** (`<script>` tag, <1KB gzipped) catches `window.onerror` + `unhandledrejection`
+- **Browser SDK** (`<script>` tag, ~1KB gzipped) catches `window.onerror` + `unhandledrejection`
 - **Worker** receives errors via `navigator.sendBeacon` and writes to Analytics Engine
 - **Dashboard** (Remix on CF Pages) queries the AE SQL API to show errors grouped by fingerprint
 
@@ -31,7 +31,11 @@ pnpm --filter @flaregun/worker dev
 pnpm --filter @flaregun/dashboard dev
 ```
 
-## SDK usage
+## Install
+
+### Option A: Inline IIFE (simplest)
+
+Load the full SDK synchronously. Catches errors immediately. ~1KB gzipped, render-blocking.
 
 ```html
 <script src="https://unpkg.com/flaregun/dist/flaregun.iife.js"></script>
@@ -43,7 +47,25 @@ pnpm --filter @flaregun/dashboard dev
 </script>
 ```
 
-Or with a bundler:
+### Option B: Queue snippet + deferred SDK (recommended)
+
+Tiny inline snippet (~350B) captures errors into a queue immediately. The full SDK loads `defer` — zero render-blocking JS — drains the queue, and takes over.
+
+```html
+<script>
+/* flaregun snippet */
+!function(w,q){w.__fg={c:null,q:q};w.Flaregun={init:function(c){w.__fg.c=c}};w.addEventListener("error",function(e){q.push({t:"error",m:e.message||"",s:e.error&&e.error.stack||"",u:location.origin+location.pathname})});w.addEventListener("unhandledrejection",function(e){var r=e.reason;q.push({t:"unhandledrejection",m:r instanceof Error?r.message:String(r||""),s:r instanceof Error?r.stack||"":"",u:location.origin+location.pathname})})}(window,[]);
+Flaregun.init({
+  endpoint: 'https://your-worker.your-subdomain.workers.dev/api/errors',
+  projectId: 'my-app'
+});
+</script>
+<script defer src="https://unpkg.com/flaregun/dist/flaregun.iife.js"></script>
+```
+
+The snippet queues errors before the SDK downloads. When the deferred script loads, it auto-detects the queue and config — no extra init call needed.
+
+### With a bundler
 
 ```js
 import { init } from 'flaregun';
@@ -86,7 +108,7 @@ Flaregun is designed to minimize personal data collection:
 - **No cookies, session IDs, or user identifiers**
 - **User-Agent reduced** to browser family + version (e.g. "Chrome 121"), not stored raw
 - **Query params stripped** from URLs before storage
-- **Built-in PII scrubber** redacts emails, credit card numbers, and SSNs from error messages and stack traces before they leave the browser
+- **Defense-in-depth PII scrubbing** — both SDK and Worker scrub emails, credit cards, SSNs, phone numbers, IPs, JWTs, bearer tokens, API keys, UUIDs, and home directory paths. Client-side scrubbing ensures PII never leaves the browser; server-side catches anything from old SDKs or custom clients
 - **90-day auto-deletion** via Analytics Engine's fixed retention
 
 ### `beforeSend` hook
