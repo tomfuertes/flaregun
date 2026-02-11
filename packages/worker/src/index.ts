@@ -12,6 +12,41 @@ interface ErrorPayload {
   projectId?: string;
 }
 
+const REDACTED = "[REDACTED]";
+
+const PII_PATTERNS: [RegExp, string][] = [
+  // Email addresses
+  [/\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/g, REDACTED],
+  // Credit card numbers (with optional separators)
+  [/\b(?:\d[ \-]*?){13,19}\b/g, REDACTED],
+  // SSN (US)
+  [/\b\d{3}-\d{2}-\d{4}\b/g, REDACTED],
+  // Phone numbers (US/intl formats)
+  [/(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)?\d{3}[-.\s]?\d{4}\b/g, REDACTED],
+  // IPv4 addresses
+  [/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, REDACTED],
+  // IPv6 addresses (simplified)
+  [/\b(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}\b/g, REDACTED],
+  // JWT tokens
+  [/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, REDACTED],
+  // Bearer tokens in strings
+  [/Bearer\s+[A-Za-z0-9_\-.~+/]+=*/gi, `Bearer ${REDACTED}`],
+  // API keys / secrets (common env var patterns leaked in errors)
+  [/(?:api[_-]?key|api[_-]?secret|access[_-]?token|auth[_-]?token|secret[_-]?key|private[_-]?key)['":\s=]+[A-Za-z0-9_\-.]{8,}/gi, REDACTED],
+  // UUIDs (often user IDs)
+  [/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, REDACTED],
+  // Home directory paths (leak usernames)
+  [/(?:\/home\/|\/Users\/|C:\\Users\\)[^\s/\\]+/g, REDACTED],
+];
+
+function scrubPII(str: string): string {
+  let result = str;
+  for (const [pattern, replacement] of PII_PATTERNS) {
+    result = result.replace(pattern, replacement);
+  }
+  return result;
+}
+
 const IP_COUNTS = new Map<string, { count: number; reset: number }>();
 const RATE_LIMIT = 100; // per minute
 
@@ -119,12 +154,16 @@ export default {
     const ua = request.headers.get("User-Agent") ?? "";
     const { browser, os } = parseUA(ua);
 
+    const message = scrubPII(payload.message.slice(0, 256));
+    const stack = scrubPII(topFrames(payload.stack ?? ""));
+    const pageUrl = scrubPII(stripQuery(payload.url ?? ""));
+
     env.ERRORS.writeDataPoint({
       blobs: [
         payload.fingerprint,
-        payload.message.slice(0, 256),
-        topFrames(payload.stack ?? ""),
-        stripQuery(payload.url ?? ""),
+        message,
+        stack,
+        pageUrl,
         browser,
         os,
         payload.type ?? "error",
