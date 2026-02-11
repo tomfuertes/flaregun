@@ -1,6 +1,16 @@
+export interface FlaregunPayload {
+  fingerprint: string;
+  message: string;
+  stack: string;
+  url: string;
+  type: string;
+  projectId: string;
+}
+
 export interface FlaregunConfig {
   endpoint: string;
   projectId: string;
+  beforeSend?: (payload: FlaregunPayload) => FlaregunPayload | null;
 }
 
 let config: FlaregunConfig | null = null;
@@ -24,8 +34,32 @@ function topFrame(stack?: string): string {
   return lines[1]?.trim() ?? "";
 }
 
-function send(payload: Record<string, unknown>) {
+const PII_PATTERNS = [
+  /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g, // emails
+  /\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{1,4}\b/g,         // credit cards
+  /\b\d{3}-\d{2}-\d{4}\b/g,                                   // SSNs
+];
+
+function scrubPII(str: string): string {
+  let result = str;
+  for (const pattern of PII_PATTERNS) {
+    result = result.replace(pattern, "[REDACTED]");
+  }
+  return result;
+}
+
+function send(payload: FlaregunPayload) {
   if (!config) return;
+
+  payload.message = scrubPII(payload.message);
+  payload.stack = scrubPII(payload.stack);
+
+  if (config.beforeSend) {
+    const result = config.beforeSend(payload);
+    if (result === null) return;
+    payload = result;
+  }
+
   const body = JSON.stringify(payload);
   if (navigator.sendBeacon) {
     navigator.sendBeacon(config.endpoint, body);
@@ -77,4 +111,3 @@ export function destroy() {
   window.removeEventListener("unhandledrejection", onRejection);
   config = null;
 }
-

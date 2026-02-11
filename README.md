@@ -78,6 +78,43 @@ pnpm build
 npx wrangler pages deploy ./build/client
 ```
 
+## Privacy & GDPR
+
+Flaregun is designed to minimize personal data collection:
+
+- **No IP addresses stored** — `cf-connecting-ip` is used for rate limiting in-memory only, never persisted
+- **No cookies, session IDs, or user identifiers**
+- **User-Agent reduced** to browser family + version (e.g. "Chrome 121"), not stored raw
+- **Query params stripped** from URLs before storage
+- **Built-in PII scrubber** redacts emails, credit card numbers, and SSNs from error messages and stack traces before they leave the browser
+- **90-day auto-deletion** via Analytics Engine's fixed retention
+
+### `beforeSend` hook
+
+For additional control, use `beforeSend` to filter or redact payloads:
+
+```js
+Flaregun.init({
+  endpoint: '/api/errors',
+  projectId: 'my-app',
+  beforeSend(payload) {
+    // Drop errors from specific pages
+    if (payload.url.includes('/admin')) return null;
+
+    // Redact custom patterns
+    payload.message = payload.message.replace(/user_\w+/gi, '[REDACTED]');
+    return payload;
+  }
+});
+```
+
+Return `null` to drop the error entirely.
+
+### Limitations
+
+- **No individual data deletion** — Analytics Engine has no API to delete specific data points. The 90-day retention is the only deletion mechanism. If you need Article 17 compliance on demand, gate Flaregun behind a consent banner or use CF Access.
+- **URL path segments** may contain identifiers (e.g. `/users/john`). Use `beforeSend` to strip them if needed.
+
 ## AE limits
 
 | | Free | Paid |
