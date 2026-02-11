@@ -5,5 +5,8 @@
   "license": "MIT",
   "engines": {
     "node": ">=18"
+  },
+  "scripts": {
+    "build": "pnpm --filter flaregun build && ./scripts/sync-readme.sh"
   }
 }

@@ -1,149 +1,94 @@
-# 🔫 Flaregun
+# Flaregun
 
-Self-hosted error tracking on Cloudflare. Analytics Engine only. No databases, no Durable Objects — just a Worker and a dashboard.
-
-## What it does
-
-- **Browser SDK** (`<script>` tag, ~1KB gzipped) catches `window.onerror` + `unhandledrejection`
-- **Worker** receives errors via `navigator.sendBeacon` and writes to Analytics Engine
-- **Dashboard** (Remix on CF Pages) queries the AE SQL API to show errors grouped by fingerprint
-
-## Architecture
+Self-hosted error tracking on Cloudflare. Analytics Engine only. No databases, no Durable Objects.
 
 ```
 Browser → sendBeacon → Worker → Analytics Engine → Dashboard (SQL API)
 ```
 
-No cold storage. No message queues. Analytics Engine handles retention (90 days) and aggregation.
-
-## Quick start
-
-```bash
-pnpm install
-
-# Build SDK
-pnpm --filter flaregun build
-
-# Dev worker
-pnpm --filter @flaregun/worker dev
-
-# Dev dashboard
-pnpm --filter @flaregun/dashboard dev
-```
-
 ## Install
 
-### Option A: Inline IIFE (simplest)
+### Option A: Inline IIFE
 
-Load the full SDK synchronously. Catches errors immediately. ~1KB gzipped, render-blocking.
+Full SDK, synchronous. <!-- IIFE_GZIP -->1080B<!-- /IIFE_GZIP --> gzipped.
 
 ```html
 <script src="https://unpkg.com/flaregun/dist/flaregun.iife.js"></script>
 <script>
-  Flaregun.init({
-    endpoint: 'https://your-worker.your-subdomain.workers.dev/api/errors',
-    projectId: 'my-app'
-  });
+  Flaregun.init({ endpoint: '/api/errors', projectId: 'my-app' });
 </script>
 ```
 
 ### Option B: Queue snippet + deferred SDK (recommended)
 
-Tiny inline snippet (~350B) captures errors into a queue immediately. The full SDK loads `defer` — zero render-blocking JS — drains the queue, and takes over.
+Inline snippet (<!-- SNIPPET_RAW -->474B<!-- /SNIPPET_RAW --> raw) queues errors immediately. Full SDK loads `defer`, drains the queue, takes over.
 
 ```html
 <script>
-/* flaregun snippet */
-!function(w,q){w.__fg={c:null,q:q};w.Flaregun={init:function(c){w.__fg.c=c}};w.addEventListener("error",function(e){q.push({t:"error",m:e.message||"",s:e.error&&e.error.stack||"",u:location.origin+location.pathname})});w.addEventListener("unhandledrejection",function(e){var r=e.reason;q.push({t:"unhandledrejection",m:r instanceof Error?r.message:String(r||""),s:r instanceof Error?r.stack||"":"",u:location.origin+location.pathname})})}(window,[]);
-Flaregun.init({
-  endpoint: 'https://your-worker.your-subdomain.workers.dev/api/errors',
-  projectId: 'my-app'
-});
+<!-- SNIPPET_START -->
+(function(r,e){r.__fg={c:null,q:e},r.Flaregun={init:function(n){r.__fg.c=n}},r.addEventListener("error",function(n){e.push({t:"error",m:n.message||"",s:n.error&&n.error.stack||"",u:location.origin+location.pathname})}),r.addEventListener("unhandledrejection",function(n){var o=n.reason;e.push({t:"unhandledrejection",m:o instanceof Error?o.message:String(o||""),s:o instanceof Error&&o.stack||"",u:location.origin+location.pathname})})})(window,[]);
+<!-- SNIPPET_END -->
+Flaregun.init({ endpoint: '/api/errors', projectId: 'my-app' });
 </script>
 <script defer src="https://unpkg.com/flaregun/dist/flaregun.iife.js"></script>
 ```
-
-The snippet queues errors before the SDK downloads. When the deferred script loads, it auto-detects the queue and config — no extra init call needed.
 
 ### With a bundler
 
 ```js
 import { init } from 'flaregun';
+init({ endpoint: '/api/errors', projectId: 'my-app' });
+```
 
-init({
-  endpoint: '/api/errors',
-  projectId: 'my-app'
+## Config
+
+```ts
+Flaregun.init({
+  endpoint: string;   // Worker URL
+  projectId: string;  // Project slug stored in blob8
+  beforeSend?: (payload) => payload | null;  // Modify or drop errors
 });
 ```
+
+`beforeSend` receives `{ fingerprint, message, stack, url, type, projectId }`. Return `null` to drop.
 
 ## Deploy
 
-### Worker
+```bash
+pnpm install && pnpm --filter flaregun build
+
+# Worker
+pnpm --filter @flaregun/worker dev      # local
+npx wrangler deploy -c packages/worker/wrangler.toml  # prod
+
+# Dashboard — set CF_ACCOUNT_ID, CF_API_TOKEN, AE_DATASET first
+pnpm --filter @flaregun/dashboard dev    # local
+pnpm --filter @flaregun/dashboard build && npx wrangler pages deploy packages/dashboard/build/client
+```
+
+## Privacy
+
+No IPs stored, no cookies, no user identifiers. UA reduced to family+version. Query params stripped from URLs.
+
+PII scrubbing runs in both SDK and Worker (defense in depth). Patterns cover emails, credit cards, SSNs, phone numbers, IPs, JWTs, tokens, API keys, UUIDs, and home directory paths. See [`PII_PATTERNS` in the SDK](packages/sdk/src/index.ts) and [`PII_PATTERNS` in the Worker](packages/worker/src/index.ts).
+
+Analytics Engine has no individual data point deletion. 90-day retention is the only deletion mechanism. For Article 17 compliance, gate behind a consent banner or CF Access.
+
+## Roadmap
+
+**v0.2 — Source maps via R2.** SDK sends script URL with errors. Worker fetches `.map` once per fingerprint, stores in R2, deobfuscates stack traces on the dashboard.
+
+**v0.3 — Durable Objects.** Real-time dedup and hot counters. Alerting via DO alarms → Slack/email Worker. Release tracking dimension.
+
+**Later.** CF Access for dashboard auth. User/session context in beacon payload.
+
+## Keeping this README in sync
+
+Size numbers and the inline snippet are generated from the build:
 
 ```bash
-cd packages/worker
-# Edit wrangler.toml if needed
-npx wrangler deploy
+./scripts/sync-readme.sh
 ```
-
-### Dashboard
-
-Set env vars in `.dev.vars` or via `wrangler pages secret put`:
-
-- `CF_ACCOUNT_ID` — your Cloudflare account ID
-- `CF_API_TOKEN` — API token with Analytics Engine read access
-- `AE_DATASET` — dataset name (default: `flaregun_errors`)
-
-```bash
-cd packages/dashboard
-pnpm build
-npx wrangler pages deploy ./build/client
-```
-
-## Privacy & GDPR
-
-Flaregun is designed to minimize personal data collection:
-
-- **No IP addresses stored** — `cf-connecting-ip` is used for rate limiting in-memory only, never persisted
-- **No cookies, session IDs, or user identifiers**
-- **User-Agent reduced** to browser family + version (e.g. "Chrome 121"), not stored raw
-- **Query params stripped** from URLs before storage
-- **Defense-in-depth PII scrubbing** — both SDK and Worker scrub emails, credit cards, SSNs, phone numbers, IPs, JWTs, bearer tokens, API keys, UUIDs, and home directory paths. Client-side scrubbing ensures PII never leaves the browser; server-side catches anything from old SDKs or custom clients
-- **90-day auto-deletion** via Analytics Engine's fixed retention
-
-### `beforeSend` hook
-
-For additional control, use `beforeSend` to filter or redact payloads:
-
-```js
-Flaregun.init({
-  endpoint: '/api/errors',
-  projectId: 'my-app',
-  beforeSend(payload) {
-    // Drop errors from specific pages
-    if (payload.url.includes('/admin')) return null;
-
-    // Redact custom patterns
-    payload.message = payload.message.replace(/user_\w+/gi, '[REDACTED]');
-    return payload;
-  }
-});
-```
-
-Return `null` to drop the error entirely.
-
-### Limitations
-
-- **No individual data deletion** — Analytics Engine has no API to delete specific data points. The 90-day retention is the only deletion mechanism. If you need Article 17 compliance on demand, gate Flaregun behind a consent banner or use CF Access.
-- **URL path segments** may contain identifiers (e.g. `/users/john`). Use `beforeSend` to strip them if needed.
-
-## AE limits
-
-| | Free | Paid |
-|---|---|---|
-| Data points/day | 100k | 10M/month included |
-| Retention | 90 days | 90 days |
-| SQL queries | 1M/month | 1M/month |
 
 ## License
 
