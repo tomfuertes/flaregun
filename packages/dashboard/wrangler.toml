@@ -1,0 +1,8 @@
+name = "flaregun-dashboard"
+compatibility_date = "2024-04-01"
+pages_build_output_dir = "./build/client"
+
+[vars]
+CF_ACCOUNT_ID = ""
+CF_API_TOKEN = ""
+AE_DATASET = "flaregun_errors"

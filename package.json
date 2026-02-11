@@ -1,0 +1,9 @@
+{
+  "name": "flaregun",
+  "private": true,
+  "description": "Self-hosted error tracking on Cloudflare. Analytics Engine only.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}

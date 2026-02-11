@@ -1,0 +1,11 @@
+name = "flaregun-worker"
+main = "src/index.ts"
+compatibility_date = "2024-04-01"
+
+[analytics_engine_datasets]
+[[analytics_engine_datasets]]
+binding = "ERRORS"
+dataset = "flaregun_errors"
+
+[vars]
+ALLOWED_ORIGINS = "*"

@@ -1,0 +1,27 @@
+{
+  "name": "flaregun",
+  "version": "0.1.0",
+  "description": "Lightweight browser error tracking SDK (<1KB gzipped)",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/flaregun.js",
+  "module": "./dist/flaregun.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/flaregun.mjs",
+      "require": "./dist/flaregun.js"
+    },
+    "./iife": "./dist/flaregun.iife.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0"
+  }
+}
