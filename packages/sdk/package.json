@@ -13,7 +13,8 @@
       "import": "./dist/flaregun.mjs",
       "require": "./dist/flaregun.js"
     },
-    "./iife": "./dist/flaregun.iife.js"
+    "./iife": "./dist/flaregun.iife.js",
+    "./snippet": "./dist/snippet.min.js"
   },
   "files": ["dist"],
   "scripts": {

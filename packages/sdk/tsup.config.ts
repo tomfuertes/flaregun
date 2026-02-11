@@ -24,4 +24,13 @@ export default defineConfig([
       return { js: ".iife.js" };
     },
   },
+  {
+    entry: ["src/snippet.js"],
+    format: ["iife"],
+    outDir: "dist",
+    minify: true,
+    outExtension() {
+      return { js: ".min.js" };
+    },
+  },
 ]);
